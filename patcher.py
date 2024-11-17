@@ -66,10 +66,10 @@ def normalize_register(reg_num):
 def patch(patches, source_file, dest_file):
     ks = Ks(KS_ARCH_X86, KS_MODE_32)
     arch = Architecture['x86']
-    base_addr = 0x00400000
+    base_addr = 0x00400000 + 0xc00 #base + section jump
     with open(source_file, 'rb') as f:
         source = f.read()
-    source = bytearray(source)
+    mod = bytearray(source)
     for patch in patches:
 
         if patch['conditional'] == False:
@@ -78,19 +78,20 @@ def patch(patches, source_file, dest_file):
             asm = ks.asm('JMP 0x%x;nop;nop;nop;nop;nop;nop;' %patch['dest'], as_bytes=True)[0] #the result is 6 bytes, while the original would be 2 bytes 
             #before it xor 6 byte, add 2 byte, inc 1 byte, jmp 2 byte
             for i in range (0,9):
-                source[(patch['address']-base_addr)+i-9] = asm[i]
+                mod[(patch['address']-base_addr-9)+i] = asm[i]
         
         else:
             asm = ks.asm('J%s 0x%x; NOP;NOP;NOP;NOP;NOP;NOP;NOP;'%(patch['cond'], patch['dest']), as_bytes=True)[0]
 
             for i in range (0,9):
 
-                source[(patch['set_addr']-base_addr)+i] = asm[i] #3 byte instruction replaced, + start of 7 byte instruction. Need to nop 4 bytes 
+                mod[(patch['set_addr']-base_addr)+i] = asm[i] #3 byte instruction replaced, + start of 7 byte instruction. Need to nop 4 bytes 
 
 
     with open(dest_file, 'wb') as f:
-        f.write(source
+        f.write(mod
         )
+
 
 def trace(ql: Qiling, address: int, size: int, user_data ):
       # Map set conditions to jump conditions
