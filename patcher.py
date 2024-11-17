@@ -1,4 +1,3 @@
-#WIP python script to recover and patch Lumma control flow manipulation based on Google Research's findings.
 from qiling import *
 from qiling.const import QL_VERBOSE
 from qiling.const import QL_OS, QL_ARCH
@@ -27,22 +26,24 @@ CS_UC_REGS = __map_regs()
 # Dictionary mapping register variations to their base register
 def normalize_register(reg_num):
     # General purpose registers
+    #modification: replaced 64 bit with 32 cause this is a 32 bit program, this causes the register read function to error.
+
     if reg_num in [2, 1, 3, 19, 35]:  # AL, AH, AX, EAX, RAX
-        return 35  # RAX
+        return 19  # EAX
     elif reg_num in [5, 4, 8, 21, 37]:  # BL, BH, BX, EBX, RBX
-        return 37  # RBX
+        return 21  # RBX
     elif reg_num in [10, 9, 12, 22, 38]:  # CL, CH, CX, ECX, RCX
-        return 38  # RCX
+        return 22  # RCX
     elif reg_num in [16, 13, 18, 24, 40]:  # DL, DH, DX, EDX, RDX
-        return 40  # RDX
+        return 24  # RDX
     elif reg_num in [7, 6, 20, 36]:  # BPL, BP, EBP, RBP
-        return 36  # RBP
+        return 20  # RBP
     elif reg_num in [15, 14, 23, 39]:  # DIL, DI, EDI, RDI
-        return 39  # RDI
+        return 23  # RDI
     elif reg_num in [46, 45, 29, 43]:  # SIL, SI, ESI, RSI
-        return 43  # RSI
+        return 29  # RSI
     elif reg_num in [48, 47, 30, 44]:  # SPL, SP, ESP, RSP
-        return 44  # RSP
+        return 30  # RSP
     # R8-R15 variants
     elif reg_num in [218, 234, 226, 106]:  # R8B, R8W, R8D, R8
         return 106  # R8
@@ -61,6 +62,7 @@ def normalize_register(reg_num):
     elif reg_num in [225, 241, 233, 113]:  # R15B, R15W, R15D, R15
         return 113  # R15
     return reg_num  # Return original if no normalization needed
+
 def patch(patches, source_file, dest_file):
     ks = Ks(KS_ARCH_X86, KS_MODE_32)
     arch = Architecture['x86']
@@ -71,19 +73,20 @@ def patch(patches, source_file, dest_file):
     for patch in patches:
 
         if patch['conditional'] == False:
+
             #patch nonconds first
-            asm = ks.asm('JMP %x' %patch['dest'])[0] #the result is 6 bytes, while the original would be 2 bytes 
-            for i in range (0,5):
-                source[(patch['address']-base_addr)+i] = asm[i]
+            asm = ks.asm('JMP 0x%x;nop;nop;nop;nop;nop;nop;' %patch['dest'], as_bytes=True)[0] #the result is 6 bytes, while the original would be 2 bytes 
+            #before it xor 6 byte, add 2 byte, inc 1 byte, jmp 2 byte
+            for i in range (0,9):
+                source[(patch['address']-base_addr)+i-9] = asm[i]
         
         else:
-            asm = ks.asm('J%s %x; NOP;NOP;NOP;NOP'%(patch['cond'], patch['dest']))[0]
+            asm = ks.asm('J%s 0x%x; NOP;NOP;NOP;NOP;NOP;NOP;NOP;'%(patch['cond'], patch['dest']), as_bytes=True)[0]
 
             for i in range (0,9):
-                print(source[(patch['set_addr']-base_addr)+i])
+
                 source[(patch['set_addr']-base_addr)+i] = asm[i] #3 byte instruction replaced, + start of 7 byte instruction. Need to nop 4 bytes 
-                print(asm[i])
-                print(source[(patch['set_addr']-base_addr)+i])
+
 
     with open(dest_file, 'wb') as f:
         f.write(source
@@ -171,15 +174,15 @@ def trace(ql: Qiling, address: int, size: int, user_data ):
                     insns.append(i)
                 back2 = previous[idx-2].address
             for insn in insns:
-                reads = (f'{md.reg_name(reg)} = {ql.arch.regs.read(CS_UC_REGS[reg]):#x}' for reg in insn.regs_access()[0])
-                trace_line = f'{insn.address:0{nibbles}x} | {insn.bytes.hex():24s} {insn.mnemonic:12} {insn.op_str:35s} | {", ".join(reads)}'
+                #reads = (f'{md.reg_name(reg)} = {ql.arch.regs.read(CS_UC_REGS[reg]):#x}' for reg in insn.regs_access()[0])
+                #trace_line = f'{insn.address:0{nibbles}x} | {insn.bytes.hex():24s} {insn.mnemonic:12} {insn.op_str:35s} | {", ".join(reads)}'
                 jmpfu = insn #final is the jump
                 
                 #with open('deobfuscator.txt','a') as f:
                 #    f.write(trace_line +'\n') if you want the trace lines to debug
             if typ == 0:
                 patc = {
-                    'dest':  ql.arch.regs.read(ourreg),
+                    'dest':  ql.arch.regs.read(CS_UC_REGS[ourreg]),
                     'conditional': False,
                     'cond': None,
                     'address': int(back2),
@@ -191,7 +194,7 @@ def trace(ql: Qiling, address: int, size: int, user_data ):
             elif typ == 1:
                 #conditional 
                 patc = {
-                    'dest':  ql.arch.regs.read(ourreg), #TODO: Add other possibility
+                    'dest':  ql.arch.regs.read(CS_UC_REGS[ourreg]), #TODO: Add other possibility
                     'conditional': True,
                     'cond' : cond, 
                     'address': int(jmpfu.address),
